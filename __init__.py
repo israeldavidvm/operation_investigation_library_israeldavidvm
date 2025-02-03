@@ -1,2 +1,3 @@
-from io_package_israeldavid20.metodoGrafico import *
-from io_package_israeldavid20.metodoSimplex import *
+from operation_investigation_library_israeldavidvm.metodoGrafico import *
+from operation_investigation_library_israeldavidvm.metodoSimplex import *
+from operation_investigation_library_israeldavidvm.pert_cpm import *

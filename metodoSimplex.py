@@ -3,108 +3,194 @@ from pulp import *
 import numpy as np
 import pandas as pd
 
+class LinearExp(object):
+
+    def __init__(self,variables:list[list],coefiLinearExp:np.array,sig=None):
+
+        assert np.size(coefiLinearExp)==len(variables),f"el numero de elemntos en coefiLinearExp es distinto a la cantidad de variables np.size(coefiLinearExp){np.size(coefiLinearExp)} len(variables){len(variables)}"
+
+        if(sig!="=" and sig!="<=" and sig!=">="):
+            raise ValueError("una expresion lineal solo puede ser una ecuacion o inecuacion")
+
+        self.sig=sig
+        
+        self.variables=variables
+        
+        self.coefiLinearExp=np.around(coefiLinearExp,3)
+
+    def addVariable(self,variable:list,coefi:float):
+        """Agrega una variable en la penultima posicion (antes del termino independiente)
+        un variable a la lista de variables de la expresion y su coeficiente ala listas de coeficientes
+
+        Args:
+            variable (list): _description_
+            coefi (float): _description_
+        """
+
+
+        independentTerm=self.variables[-1]
+        self.variables=self.variables[:-1]
+        self.variables.append(variable)
+        self.variables.append(independentTerm)
+
+        self.coefiLinearExp=np.concatenate((self.coefiLinearExp[:-1],[coefi],[self.coefiLinearExp[-1]]))
+
+    def __str__(self):
+        string=""
+
+        for i in range(0,len(self.coefiLinearExp)):
+
+            if(i==len(self.coefiLinearExp)-1):
+                string+=self.sig
+
+            if(self.coefiLinearExp[i]>=0):
+
+                string+=f"+{str(self.coefiLinearExp[i])}{self.variables[i][0]}"    
+            
+            else:
+
+                string+=f"{str(self.coefiLinearExp[i])}{self.variables[i][0]}"
+
+        return string
+
+    def printwithoutZeros(self):
+        string=""
+
+        for i in range(0,len(self.coefiLinearExp)):
+
+            if(self.coefiLinearExp[i]>=0):
+
+
+                if(i==len(self.coefiLinearExp)-1):
+                    string+="="
+
+                if(self.coefiLinearExp[i]==0):
+                    continue
+
+                string+=f"+{str(self.coefiLinearExp[i])}{self.variables[i]}"    
+            
+            else:
+
+                string+=f"{str(self.coefiLinearExp[i])}{self.variables[i]}"
+
+        print(string)
+
+    def makeSurePositiveRightSideConstraint(self):
+
+        if(self.isNegativeIndependentTerm()):
+    
+            coefi=-1*self.coefiLinearExp
+            variables=self.variables
+            sig=None
+            if(self.sig=='<'):
+                sig='>'    
+            elif(self.sig=='<='):
+                sig='>='
+            elif(self.sig=='>'):
+                sig='<'
+            elif(self.sig=='>='):
+                sig='<='
+            else:
+                raise ValueError
+
+            self=LinearExp(variables,coefi,sig)
+            
+        return self
+
+
+    def isNegativeIndependentTerm(self)->bool: 
+        if(self.coefiLinearExp[-1]<=0):
+            return True
+        return False
+
 class Model(object):
-    def __init__(self,variables,constraints,objetiveFuction):
+    def __init__(self,variables:list,constraints:list[LinearExp],objetiveFuction: LinearExp):
 
         self.variables=variables
         self.constraints=constraints
         self.objetiveFunction=objetiveFuction
+        self.basicVariables=[]
 
     def transformStandartForm(self,objetive,bigM):
-
-        self.basicVariables=[]
 
         self.basicVariables.append(self.variables[0][0])
 
         for i in range(0,len(self.constraints)):
-            if(self.constraints[i].sig=="<="):
-                newVar=["h"+str(i+1),None]
 
-                self.addVariable(newVar)
+            self.constraints[i].makeSurePositiveRightSideConstraint()
 
-                self.objetiveFunction.addVariable(newVar,coefi=0)
-                self.basicVariables.append(newVar[0])
-
-                self.constraints[i].sig=="="
-
-
-                print(f"Como la restricción {i+1} es del tipo '≤' se agrega la variable de holgura {newVar[0]}.")
-                
-                for j in range(0, len(self.constraints)):
-
-                    if(i==j):
-                        self.constraints[j].addVariable(newVar,coefi=1)
-                    else:
-                        self.constraints[j].addVariable(newVar,coefi=0)
+            self.transformConstraint(self.constraints[i],i,objetive,bigM)            
+      
+    def transformConstraint(self,constraint,i,objetive,bigM):
+        if(constraint.sig=="<="):
+            newVar=["h"+str(i+1),None]
+            self.addVariable(newVar)
+            self.objetiveFunction.addVariable(newVar,coefi=0)
+            self.basicVariables.append(newVar[0])
+            constraint.sig="="
+            print(f"Como la restricción {i+1} es del tipo '≤' se agrega la variable de holgura {newVar[0]}.")
+          
+            for j in range(0, len(self.constraints)):
+                if(i==j):
+                    self.constraints[j].addVariable(newVar,coefi=1)
+                else:
+                    self.constraints[j].addVariable(newVar,coefi=0)
+        
+        elif(constraint.sig=="="):
+            newVar=["a"+str(i+1),None]
+            self.addVariable(newVar)
+            self.basicVariables.append(newVar[0])
             
-            if(self.constraints[i].sig=="="):
-                newVar=["a"+str(i+1),None]
-                self.addVariable(newVar)
-                self.basicVariables.append(newVar[0])
-
+            if(objetive=="max"):
                 self.objetiveFunction.addVariable(newVar,coefi=bigM)
+            elif(objetive=="min"):
+                self.objetiveFunction.addVariable(newVar,coefi=-1*bigM)
 
-                self.constraints[i].sig=="="
-
-                print(f"Como la restricción {i+1} es del tipo '=' se agrega la variable artificial {newVar[0]}.")
+            constraint.sig="="
+            print(f"Como la restricción {i+1} es del tipo '=' se agrega la variable artificial {newVar[0]}.")
+            
+            for j in range(0, len(self.constraints)):
+                if(i==j):
+                    self.constraints[j].addVariable(newVar,coefi=1)
                 
-                for j in range(0, len(self.constraints)):
-
-                    if(i==j):
-                        self.constraints[j].addVariable(newVar,coefi=1)
+                    if(objetive=="max"):
+                        self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp-bigM*constraint.coefiLinearExp
                     
-                        if(objetive=="max"):
-
-                            self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp-bigM*self.constraints[i].coefiLinearExp
-                        
-                        elif(objetive=="min"):
-
-                            self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp+bigM*self.constraints[i].coefiLinearExp
-
-                    
-                    else:
-                        self.constraints[j].addVariable(newVar,coefi=0)
-
-            if(self.constraints[i].sig==">="):
-                newVar1=["e"+str(i+1),None]
-                newVar2=["a"+str(i+1),None]
-
-                self.addVariable(newVar1)
-                self.addVariable(newVar2)
-
-                self.basicVariables.append(newVar2[0])
-
-                self.objetiveFunction.addVariable(newVar1,coefi=0)
+                    elif(objetive=="min"):
+                        self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp+bigM*constraint.coefiLinearExp
+                else:
+                    self.constraints[j].addVariable(newVar,coefi=0)
+        
+        elif(constraint.sig==">="):
+            newVar1=["e"+str(i+1),None]
+            newVar2=["a"+str(i+1),None]
+            self.addVariable(newVar1)
+            self.addVariable(newVar2)
+            self.basicVariables.append(newVar2[0])
+            self.objetiveFunction.addVariable(newVar1,coefi=0)
+            if(objetive=="max"):
                 self.objetiveFunction.addVariable(newVar2,coefi=bigM)
-
-                self.constraints[i].sig=="="
-
-                print(f"Como la restricción {i+1} es del tipo '>=' se agrega la variable exceso {newVar1[0]}.")
-                print(f"Como la restricción {i+1} es del tipo '>=' se agrega la variable artificial {newVar2[0]}.")
-
-                
-                for j in range(0, len(self.constraints)):
-
-                    if(i==j):
-                        self.constraints[j].addVariable(newVar1,coefi=-1)
-                        self.constraints[j].addVariable(newVar2,coefi=1)
-
-                        if(objetive=="max"):
-
-                            self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp-bigM*self.constraints[i].coefiLinearExp
-                        
-                        elif(objetive=="min"):
-
-                            self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp+bigM*self.constraints[i].coefiLinearExp
-
-
-                    else:
-                        self.constraints[j].addVariable(newVar1,coefi=0)
-                        self.constraints[j].addVariable(newVar1,coefi=0)
-
+            elif(objetive=="min"):
+                self.objetiveFunction.addVariable(newVar2,coefi=-1*bigM)
+            constraint.sig="="
+            print(f"Como la restricción {i+1} es del tipo '>=' se agrega la variable exceso {newVar1[0]}.")
+            print(f"Como la restricción {i+1} es del tipo '>=' se agrega la variable artificial {newVar2[0]}.")
+            
+            for j in range(0, len(self.constraints)):
+                if(i==j):
+                    self.constraints[j].addVariable(newVar1,coefi=-1)
+                    self.constraints[j].addVariable(newVar2,coefi=1)
+                    if(objetive=="max"):
+                        self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp-bigM*constraint.coefiLinearExp
+                    
+                    elif(objetive=="min"):
+                        self.objetiveFunction.coefiLinearExp=self.objetiveFunction.coefiLinearExp+bigM*constraint.coefiLinearExp
+                else:
+                    self.constraints[j].addVariable(newVar1,coefi=0)
+                    self.constraints[j].addVariable(newVar1,coefi=0)
 
     
-    def addVariable(self,variable):
+    def addVariable(self,variable:list):
         independentTerm=self.variables[-1]
         self.variables=self.variables[:-1]
         self.variables.append(variable)
@@ -133,7 +219,7 @@ class Model(object):
 
         self.print()
 
-        print("Pasamos el problema a la forma estándar,añadiendo variables de exceso, holgura, y artificiales según corresponda")
+        print(f"Dado un M={bigM} Pasamos el problema a la forma estándar,añadiendo variables de exceso, holgura, y artificiales según corresponda")
         self.transformStandartForm(objetive,bigM)
         self.print()
        
@@ -155,7 +241,7 @@ class Model(object):
 
             indexOutputVar=self.getIndexOutputVariable(coefis,indexInputVar)
 
-            print(indexOutputVar,indexInputVar)
+            #print(indexOutputVar,indexInputVar)
 
             self.basicVariables[indexOutputVar]=self.variables[indexInputVar][0]
 
@@ -228,25 +314,24 @@ class Model(object):
 
     def columnElimination(self,pivoteIndices,coefis):
 
-        #print(pivoteIndices,coefis[pivoteIndices[1]])
-
         coefiPivote=coefis[pivoteIndices[1]][pivoteIndices[0]]
-
+        
         if(coefiPivote!=0):
-
+            
+            #Ry<-Ry/ayx
             coefis[pivoteIndices[1]]=coefis[pivoteIndices[1]]/coefiPivote
 
-        for f in range(0,len(coefis)):
+        for rowIndex in range(0,len(coefis)):
 
-            if(f==pivoteIndices[1]):
+            if(rowIndex==pivoteIndices[1]):
                 continue
 
-            coefiRow=coefis[f][pivoteIndices[0]]
+            coefiRow=coefis[rowIndex][pivoteIndices[0]]
 
-            coefis[f]=coefis[f]-(coefis[pivoteIndices[1]]*coefiRow)
+            coefis[rowIndex]=coefis[rowIndex]-(coefis[pivoteIndices[1]]*coefiRow)
             
 
-    def canBeOptimized(self,coefiObjetiveFunction):
+    def canBeOptimized(self,coefiObjetiveFunction:np.around):
 
         for coefi in coefiObjetiveFunction[1:-1]:
 
@@ -277,7 +362,7 @@ class Model(object):
         return True
 
 
-    def canItBeAMultipleSolution(self,coefiObjetiveFunction):
+    def canItBeAMultipleSolution(self,coefiObjetiveFunction:np.around)->bool:
 
         """
         En un problema de PL se presenta una solucion optima multiple cuando
@@ -297,7 +382,7 @@ class Model(object):
                 return False
         
     
-    def getIndexInputVariable(self,coefiObjetiveFunction):
+    def getIndexInputVariable(self,coefiObjetiveFunction:np.around)->int:
         """
         En el caso de una solucion multiple se muestra una advertencia pero se sige con 
         el flujo estandar, es decir se busca la primera solucion optima
@@ -324,14 +409,14 @@ class Model(object):
             #notese que en caso de empate tanto para minimo como maximo
             #se escoge el primero que sea minimo o maximo, los demas indices que cumplan con
             #esta caracteristica se ignoran
-            if(coefiInputVariable==None or (coefiObjetiveFunction[i]<coefiInputVariable)):
+            if(coefiInputVariable==None or (coefiObjetiveFunction[i]<0 and coefiObjetiveFunction[i]<coefiInputVariable)):
                 index=i
                 coefiInputVariable=coefiObjetiveFunction[i]
 
         
         return index
     
-    def getIndexOutputVariable(self,coefis,indexInputVariable):
+    def getIndexOutputVariable(self, coefis:list[float] ,indexInputVariable:int)->int:
         """
         En caso de degeneracion (existe mas de una variable de salida):
             Se retorna la primera evaluado de arriba abajo y se imprime una dvertensia
@@ -352,7 +437,7 @@ class Model(object):
             _type_: _description_
         """
 
-        index=-1
+        indices=[-1]
         cociente=None
         newCociente=None
 
@@ -365,90 +450,69 @@ class Model(object):
             
                 newCociente=(coefis[f][-1])/(coefis[f][indexInputVariable])                
 
-            
             if(newCociente==cociente):
                 print("cuidado parece que se a producido una degeneeracion \
                     (hay mas de una variable basica de salida) en algunos casos \
-                        puede ser que se caiga en un bucle infinito"
+                        puede ser que se caiga en un bucle infinito para evitarlo \
+                            usaremos la regla lexicografica"
                 )
 
+                if(cociente!=None):
 
+                    indices.append(f)
 
             if(
                 cociente==None or newCociente<cociente
             ):
 
                 cociente=newCociente
-
+                
                 if(cociente!=None):
 
-                    index=f
+                    indices.clear()
+
+                    indices.append(f)
         
+        if(len(indices)==1):
+            return indices[0]
+        else:
+            return self.lexicographicalMethod(indices,indexInputVariable,coefis)
+
+    def lexicographicalMethod(self,indices,indexInputVariable,coefis):
+        
+        coefisCopy=[]
+        
+        index=None
+
+        for row in range(0,len(indices)):
+
+            possiblePivot=coefis[indices[row]][indexInputVariable]
+
+            coefisCopy.append(coefis[indices[row]]/possiblePivot)
+
+        for column in range(0,len(coefis[0])):
+
+            for row in range(0,len(indices)):
+
+                if(index==None or coefisCopy[index][column]>coefisCopy[row][column]):
+                    index=row
+                    
         return index
 
-            
-    
+# if __name__ == '__main__':
 
+#     variables=[
+#         ["z",""],
+#         ["x1",""],
+#         ["x2",""],
+#         ["x3",""],
+#         ["",None] #tyermino independiente
+#     ]
 
-class LinearExp(object):
+#     constraint=LinearExp(variables,np.array([0,-1,1,-2,-5]),"<=")
 
-    def __init__(self,variables,coefiLinearExp,sig=None):
+#     print(constraint)
 
-        if(sig!="=" and sig!="<=" and sig!=">="):
-            raise Exception("una expresion lineal solo puede ser una ecuacion o inecuacion")
+#     transformConstraint=constraint.makePositiveRightSideConstraint()
 
-        self.sig=sig
-        
-        self.variables=[var[0] for var in variables]
-        
-        self.coefiLinearExp=np.around(coefiLinearExp,3)
-
-    def addVariable(self,variable,coefi):
-
-        independentTerm=self.variables[-1]
-        self.variables=self.variables[:-1]
-        self.variables.append(variable[0])
-        self.variables.append(independentTerm)
-
-        self.coefiLinearExp=np.concatenate((self.coefiLinearExp[:-1],[coefi],[self.coefiLinearExp[-1]]))
-
-    def __str__(self):
-        string=""
-
-        for i in range(0,len(self.coefiLinearExp)):
-
-            if(i==len(self.coefiLinearExp)-1):
-                string+=self.sig
-
-            if(self.coefiLinearExp[i]>=0):
-
-                string+=f"+{str(self.coefiLinearExp[i])}{self.variables[i]}"    
-            
-            else:
-
-                string+=f"{str(self.coefiLinearExp[i])}{self.variables[i]}"
-
-        return string
-
-    def printwithoutZeros(self):
-        string=""
-
-        for i in range(0,len(self.coefiLinearExp)):
-
-            if(self.coefiLinearExp[i]>=0):
-
-
-                if(i==len(self.coefiLinearExp)-1):
-                    string+="="
-
-                if(self.coefiLinearExp[i]==0):
-                    continue
-
-                string+=f"+{str(self.coefiLinearExp[i])}{self.variables[i]}"    
-            
-            else:
-
-                string+=f"{str(self.coefiLinearExp[i])}{self.variables[i]}"
-
-        print(string)
-
+#     print(transformConstraint)
